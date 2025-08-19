@@ -1,8 +1,10 @@
-'use client';
-import { ApolloProvider } from '@apollo/client';
-import { AuthProvider } from '@/contexts/AuthContext';
-import { apolloClient } from '@/lib/apollo';
-import './globals.css';
+// src/app/layout.tsx
+
+"use client";
+import { ApolloProvider } from "@apollo/client";
+import { AuthProvider } from "@/contexts/AuthContext";
+import { apolloClient } from "@/lib/apollo";
+import "./globals.css";
 
 export default function RootLayout({
   children,
@@ -13,9 +15,7 @@ export default function RootLayout({
     <html lang="en">
       <body>
         <ApolloProvider client={apolloClient}>
-          <AuthProvider>
-            {children}
-          </AuthProvider>
+          <AuthProvider>{children}</AuthProvider>
         </ApolloProvider>
       </body>
     </html>

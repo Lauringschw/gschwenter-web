@@ -1,25 +1,38 @@
-'use client';
-import { useState } from 'react';
-import { useAuth } from '@/contexts/AuthContext';
+"use client";
+import { useState } from "react";
+import { useAuth } from "@/contexts/AuthContext";
 
 export default function LoginForm() {
-  const [username, setUsername] = useState('');
-  const [password, setPassword] = useState('');
-  const [error, setError] = useState('');
+  const [username, setUsername] = useState("");
+  const [password, setPassword] = useState("");
+  const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [detailedError, setDetailedError] = useState("");
   const { login } = useAuth();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
-    setError('');
+    setError("");
+    setDetailedError("");
 
-    const success = await login(username, password);
-    
-    if (!success) {
-      setError('Invalid credentials');
+    console.log("Attempting login with:", { username, password: "***" });
+
+    try {
+      const success = await login(username, password);
+
+      if (!success) {
+        setError("Invalid credentials");
+        console.log("Login failed: Invalid credentials returned");
+      } else {
+        console.log("Login successful");
+      }
+    } catch (err: any) {
+      console.error("Login error:", err);
+      setError("Login failed");
+      setDetailedError(err.message || "Unknown error occurred");
     }
-    
+
     setLoading(false);
   };
 
@@ -69,7 +82,16 @@ export default function LoginForm() {
           </div>
 
           {error && (
-            <div className="text-red-600 text-sm text-center">{error}</div>
+            <div className="bg-red-50 border border-red-200 rounded-md p-3">
+              <div className="text-red-600 text-sm text-center font-medium">
+                {error}
+              </div>
+              {detailedError && (
+                <div className="text-red-500 text-xs text-center mt-1">
+                  {detailedError}
+                </div>
+              )}
+            </div>
           )}
 
           <div>
@@ -78,8 +100,27 @@ export default function LoginForm() {
               disabled={loading}
               className="group relative w-full flex justify-center py-2 px-4 border border-transparent text-sm font-medium rounded-md text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50"
             >
-              {loading ? 'Signing in...' : 'Sign in'}
+              {loading ? "Signing in..." : "Sign in"}
             </button>
+          </div>
+
+          {process.env.NODE_ENV === "development" && (
+            <div className="mt-4 p-3 bg-gray-100 rounded-md text-xs text-gray-600">
+              <div className="font-medium mb-1">Debug Info:</div>
+              <div>
+                GraphQL URL:{" "}
+                {process.env.NEXT_PUBLIC_GRAPHQL_URL ||
+                  "http://localhost:4000/graphql"}
+              </div>
+              <div>Username: {username}</div>
+              <div>Password: {"*".repeat(password.length)}</div>
+            </div>
+          )}
+
+          <div className="text-center text-sm text-gray-500">
+            <div>Default credentials:</div>
+            <div className="font-mono">Username: admin</div>
+            <div className="font-mono">Password: admin123</div>
           </div>
         </form>
       </div>

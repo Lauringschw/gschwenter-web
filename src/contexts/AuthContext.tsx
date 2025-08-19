@@ -1,8 +1,9 @@
-'use client';
-import React, { createContext, useContext, useState, useEffect } from 'react';
-import { useMutation } from '@apollo/client';
-import Cookies from 'js-cookie';
-import { LOGIN_MUTATION } from '@/lib/queries';
+// src/contexts/AuthContext.tsx
+"use client";
+import React, { createContext, useContext, useState, useEffect } from "react";
+import { useMutation } from "@apollo/client";
+import Cookies from "js-cookie";
+import { LOGIN_MUTATION } from "@/lib/queries";
 
 interface User {
   id: string;
@@ -25,43 +26,91 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     // Check if user is logged in on app start
-    const token = Cookies.get('auth-token');
-    const userData = localStorage.getItem('user');
-    
+    const token = Cookies.get("auth-token");
+    const userData = localStorage.getItem("user");
+
+    console.log("Auth check on startup:", {
+      hasToken: !!token,
+      hasUserData: !!userData,
+      token: token?.substring(0, 20) + "...",
+      userData: userData,
+    });
+
     if (token && userData) {
       try {
-        setUser(JSON.parse(userData));
+        const parsedUser = JSON.parse(userData);
+        setUser(parsedUser);
+        console.log("User restored from localStorage:", parsedUser);
       } catch (error) {
-        console.error('Error parsing user data:', error);
+        console.error("Error parsing user data:", error);
         logout();
       }
     }
     setLoading(false);
   }, []);
 
-  const login = async (username: string, password: string): Promise<boolean> => {
+  const login = async (
+    username: string,
+    password: string
+  ): Promise<boolean> => {
     try {
-      const { data } = await loginMutation({
-        variables: { username, password }
+      console.log("Attempting GraphQL login mutation...");
+      console.log(
+        "GraphQL endpoint:",
+        process.env.NEXT_PUBLIC_GRAPHQL_URL || "http://localhost:4000/graphql"
+      );
+
+      const { data, errors } = await loginMutation({
+        variables: { username, password },
       });
+
+      console.log("GraphQL response:", { data, errors });
+
+      if (errors) {
+        console.error("GraphQL errors:", errors);
+        return false;
+      }
 
       if (data?.login) {
         const { token, user: loginUser } = data.login;
-        Cookies.set('auth-token', token, { expires: 7 }); // 7 days
-        localStorage.setItem('user', JSON.stringify(loginUser));
+        console.log("Login successful:", {
+          token: token.substring(0, 20) + "...",
+          user: loginUser,
+        });
+
+        Cookies.set("auth-token", token, { expires: 7 }); // 7 days
+        localStorage.setItem("user", JSON.stringify(loginUser));
         setUser(loginUser);
         return true;
+      } else {
+        console.log("No login data in response");
+        return false;
       }
-      return false;
-    } catch (error) {
-      console.error('Login error:', error);
+    } catch (error: any) {
+      console.error("Login error:", error);
+
+      // Check if it's a network error
+      if (error.networkError) {
+        console.error("Network error details:", {
+          message: error.networkError.message,
+          statusCode: error.networkError.statusCode,
+          result: error.networkError.result,
+        });
+      }
+
+      // Check if it's a GraphQL error
+      if (error.graphQLErrors) {
+        console.error("GraphQL errors:", error.graphQLErrors);
+      }
+
       return false;
     }
   };
 
   const logout = () => {
-    Cookies.remove('auth-token');
-    localStorage.removeItem('user');
+    console.log("Logging out user");
+    Cookies.remove("auth-token");
+    localStorage.removeItem("user");
     setUser(null);
   };
 
@@ -75,7 +124,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 export function useAuth() {
   const context = useContext(AuthContext);
   if (context === undefined) {
-    throw new Error('useAuth must be used within an AuthProvider');
+    throw new Error("useAuth must be used within an AuthProvider");
   }
   return context;
 }

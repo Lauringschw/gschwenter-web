@@ -70,6 +70,9 @@ export const GET_ARTWORK = gql`
         image_name
         is_primary
         sort_order
+        file_type
+        mime_type
+        thumbnail_path
       }
       created_at
       updated_at
@@ -102,6 +105,9 @@ export const SEARCH_ARTWORKS = gql`
       title
       artist_name
       year_created
+      medium
+      dimensions
+      location_in_collection
       primary_image {
         image_path
       }
@@ -121,6 +127,9 @@ export const GET_COLLECTION_STATS = gql`
         title
         artist_name
         acquisition_date
+        medium
+        dimensions
+        location_in_collection
         primary_image {
           image_path
         }
@@ -193,18 +202,39 @@ export const ADD_IMAGE_TO_ARTWORK = gql`
     $image_path: String!
     $image_name: String!
     $is_primary: Boolean
+    $file_type: String
+    $mime_type: String
+    $thumbnail_path: String
   ) {
     addImageToArtwork(
       artwork_id: $artwork_id
       image_path: $image_path
       image_name: $image_name
       is_primary: $is_primary
+      file_type: $file_type
+      mime_type: $mime_type
+      thumbnail_path: $thumbnail_path
     ) {
       id
       image_path
       image_name
       is_primary
+      file_type
+      mime_type
+      thumbnail_path
     }
+  }
+`;
+
+export const REMOVE_IMAGE_FROM_ARTWORK = gql`
+  mutation RemoveImageFromArtwork($id: ID!) {
+    removeImageFromArtwork(id: $id)
+  }
+`;
+
+export const SET_PRIMARY_IMAGE = gql`
+  mutation SetPrimaryImage($id: ID!) {
+    setPrimaryImage(id: $id)
   }
 `;
 
@@ -220,6 +250,24 @@ export const CREATE_CATEGORY = gql`
       id
       name
       parent_id
+      parent {
+        id
+        name
+      }
+    }
+  }
+`;
+
+export const UPDATE_CATEGORY = gql`
+  mutation UpdateCategory($id: ID!, $name: String!) {
+    updateCategory(id: $id, name: $name) {
+      id
+      name
+      parent_id
+      parent {
+        id
+        name
+      }
     }
   }
 `;
@@ -227,5 +275,15 @@ export const CREATE_CATEGORY = gql`
 export const DELETE_CATEGORY = gql`
   mutation DeleteCategory($id: ID!) {
     deleteCategory(id: $id)
+  }
+`;
+
+export const GET_ME = gql`
+  query GetMe {
+    me {
+      id
+      username
+      created_at
+    }
   }
 `;

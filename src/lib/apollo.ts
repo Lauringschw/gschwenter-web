@@ -1,20 +1,27 @@
-import { ApolloClient, InMemoryCache, createHttpLink, from } from '@apollo/client';
-import { setContext } from '@apollo/client/link/context';
-import Cookies from 'js-cookie';
+// src/lib/apollo.ts
+
+import {
+  ApolloClient,
+  InMemoryCache,
+  createHttpLink,
+  from,
+} from "@apollo/client";
+import { setContext } from "@apollo/client/link/context";
+import Cookies from "js-cookie";
 
 const httpLink = createHttpLink({
-  uri: process.env.NEXT_PUBLIC_GRAPHQL_URL || 'http://localhost:4000/graphql',
+  uri: process.env.NEXT_PUBLIC_GRAPHQL_URL || "http://localhost:4000/graphql",
 });
 
 const authLink = setContext((_, { headers }) => {
-  const token = Cookies.get('auth-token');
-  
+  const token = Cookies.get("auth-token");
+
   return {
     headers: {
       ...headers,
       authorization: token ? `Bearer ${token}` : "",
-    }
-  }
+    },
+  };
 });
 
 export const apolloClient = new ApolloClient({
@@ -22,10 +29,10 @@ export const apolloClient = new ApolloClient({
   cache: new InMemoryCache(),
   defaultOptions: {
     watchQuery: {
-      errorPolicy: 'all',
+      errorPolicy: "all",
     },
     query: {
-      errorPolicy: 'all',
+      errorPolicy: "all",
     },
   },
 });

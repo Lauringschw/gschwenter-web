@@ -34,8 +34,11 @@ export default function Dashboard() {
     },
   });
 
-  const { data: categoriesData } = useQuery(GET_CATEGORIES);
-  const { data: statsData } = useQuery(GET_COLLECTION_STATS);
+  const { data: categoriesData, refetch: refetchCategories } =
+    useQuery(GET_CATEGORIES);
+
+  const { data: statsData, refetch: refetchStats } =
+    useQuery(GET_COLLECTION_STATS);
 
   const handleSearch = (query: string) => {
     setSearchQuery(query);
@@ -47,12 +50,14 @@ export default function Dashboard() {
 
   const handleArtworkAdded = () => {
     refetchArtworks();
+    refetchStats();
     setShowAddModal(false);
   };
 
   const handleManagementUpdate = () => {
     refetchArtworks();
-    // This will trigger a refetch of categories in the modals
+    refetchCategories();
+    refetchStats();
   };
 
   return (
@@ -70,19 +75,19 @@ export default function Dashboard() {
               <span className="text-gray-700">Welcome, {user?.username}</span>
               <button
                 onClick={() => setShowAddModal(true)}
-                className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-md text-sm font-medium"
+                className="bg-indigo-600 hover:bg-indigo-700 text-white px-4 py-2 rounded-md text-sm font-medium transition-colors"
               >
                 Add Artwork
               </button>
               <button
                 onClick={() => setShowManagementModal(true)}
-                className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-md text-sm font-medium"
+                className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded-md text-sm font-medium transition-colors"
               >
                 Manage
               </button>
               <button
                 onClick={logout}
-                className="bg-gray-600 hover:bg-gray-700 text-white px-4 py-2 rounded-md text-sm font-medium"
+                className="bg-gray-600 hover:bg-gray-700 text-white px-4 py-2 rounded-md text-sm font-medium transition-colors"
               >
                 Logout
               </button>
@@ -131,7 +136,6 @@ export default function Dashboard() {
       {/* Add Artwork Modal */}
       {showAddModal && (
         <AddArtworkModal
-          categories={categoriesData?.categories || []}
           onClose={() => setShowAddModal(false)}
           onArtworkAdded={handleArtworkAdded}
         />

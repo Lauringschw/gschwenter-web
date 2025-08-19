@@ -1,4 +1,4 @@
-// Enhanced src/components/AddArtworkModal.tsx with all improvements
+// Enhanced src/components/AddArtworkModal.tsx with better error handling
 
 "use client";
 import { useState, useEffect, useCallback } from "react";
@@ -13,6 +13,7 @@ import {
   CREATE_ARTWORK,
   ADD_IMAGE_TO_ARTWORK,
   GET_ARTISTS,
+  GET_CATEGORIES,
 } from "@/lib/queries";
 import CategorySelector from "./CategorySelector";
 import Cookies from "js-cookie";
@@ -21,10 +22,11 @@ interface Category {
   id: string;
   name: string;
   parent_id?: string;
+  parent?: Category;
+  children?: Category[];
 }
 
 interface AddArtworkModalProps {
-  categories: Category[];
   onClose: () => void;
   onArtworkAdded: () => void;
 }
@@ -37,7 +39,6 @@ interface SelectedFile {
 }
 
 export default function AddArtworkModal({
-  categories,
   onClose,
   onArtworkAdded,
 }: AddArtworkModalProps) {
@@ -74,12 +75,52 @@ export default function AddArtworkModal({
     length: "",
   });
 
-  const [createArtwork] = useMutation(CREATE_ARTWORK);
-  const [addImage] = useMutation(ADD_IMAGE_TO_ARTWORK);
+  const [createArtwork] = useMutation(CREATE_ARTWORK, {
+    onError: (error) => {
+      console.error("Create artwork mutation error:", error);
+      console.error("GraphQL errors:", error.graphQLErrors);
+      console.error("Network error:", error.networkError);
+
+      // Set a more specific error message
+      const errorMessage =
+        error.graphQLErrors?.[0]?.message ||
+        error.networkError?.message ||
+        error.message ||
+        "Unknown error occurred";
+      setErrors({ general: errorMessage });
+    },
+  });
+
+  const [addImage] = useMutation(ADD_IMAGE_TO_ARTWORK, {
+    onError: (error) => {
+      console.error("Add image mutation error:", error);
+    },
+  });
 
   // Get existing artists for dropdown
-  const { data: artistsData } = useQuery(GET_ARTISTS);
+  const {
+    data: artistsData,
+    loading: artistsLoading,
+    error: artistsError,
+  } = useQuery(GET_ARTISTS, {
+    onError: (error) => {
+      console.error("Artists query error:", error);
+    },
+  });
+
+  // Get categories
+  const {
+    data: categoriesData,
+    loading: categoriesLoading,
+    error: categoriesError,
+  } = useQuery(GET_CATEGORIES, {
+    onError: (error) => {
+      console.error("Categories query error:", error);
+    },
+  });
+
   const existingArtists = artistsData?.getArtists || [];
+  const categories = categoriesData?.categories || [];
 
   useEffect(() => {
     // Filter artists based on search
@@ -89,7 +130,7 @@ export default function AddArtworkModal({
       );
       setFilteredArtists(filtered);
     } else {
-      setFilteredArtists(existingArtists);
+      setFilteredArtists(existingArtists.slice(0, 10)); // Show max 10 artists initially
     }
   }, [artistSearch, existingArtists]);
 
@@ -107,6 +148,17 @@ export default function AddArtworkModal({
     }
     setFormData((prev) => ({ ...prev, dimensions: dimensionString }));
   }, [dimensions, dimensionType]);
+
+  // Cleanup object URLs on unmount
+  useEffect(() => {
+    return () => {
+      selectedFiles.forEach((file) => {
+        if (!file.isPDF && file.preview.startsWith("blob:")) {
+          URL.revokeObjectURL(file.preview);
+        }
+      });
+    };
+  }, []);
 
   // Add the missing handleCategoryChange function
   const handleCategoryChange = useCallback((categoryId: string) => {
@@ -126,6 +178,7 @@ export default function AddArtworkModal({
   const validateForm = () => {
     const newErrors: { [key: string]: string } = {};
 
+    // Check all mandatory fields
     if (!formData.title.trim()) newErrors.title = "Title is required";
     if (!formData.artist_name.trim())
       newErrors.artist_name = "Artist name is required";
@@ -136,6 +189,26 @@ export default function AddArtworkModal({
       newErrors.location_in_collection = "Location in collection is required";
     if (!formData.category_id) newErrors.category_id = "Category is required";
 
+    // Validate year if provided
+    if (
+      formData.year_created &&
+      (parseInt(formData.year_created) < 1 ||
+        parseInt(formData.year_created) > new Date().getFullYear())
+    ) {
+      newErrors.year_created = "Please enter a valid year";
+    }
+
+    // Validate prices if provided
+    if (
+      formData.acquisition_price &&
+      parseFloat(formData.acquisition_price) < 0
+    ) {
+      newErrors.acquisition_price = "Price cannot be negative";
+    }
+    if (formData.current_value && parseFloat(formData.current_value) < 0) {
+      newErrors.current_value = "Value cannot be negative";
+    }
+
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
@@ -144,77 +217,174 @@ export default function AddArtworkModal({
     e.preventDefault();
 
     if (!validateForm()) {
+      console.log("Form validation failed:", errors);
       return;
     }
 
     setLoading(true);
+    setErrors({}); // Clear previous errors
 
     try {
+      console.log("🎨 Creating artwork...");
+      console.log("Form data:", formData);
+
+      // Prepare artwork input with proper type conversion and validation
       const artworkInput = {
-        ...formData,
+        title: formData.title.trim(),
+        artist_name: formData.artist_name.trim(),
+        medium: formData.medium.trim(),
+        dimensions: formData.dimensions.trim(),
+        location_in_collection: formData.location_in_collection.trim(),
+        category_id: formData.category_id,
         year_created: formData.year_created
           ? parseInt(formData.year_created)
-          : undefined,
+          : null,
+        edition_number: formData.edition_number.trim() || null,
+        provenance: formData.provenance.trim() || null,
+        condition_status: formData.condition_status || "Good",
+        acquisition_date: formData.acquisition_date || null,
         acquisition_price: formData.acquisition_price
           ? parseFloat(formData.acquisition_price)
-          : undefined,
+          : null,
         current_value: formData.current_value
           ? parseFloat(formData.current_value)
-          : undefined,
-        category_id: formData.category_id || undefined,
+          : null,
+        description: formData.description.trim() || null,
+        notes: formData.notes.trim() || null,
       };
 
-      const { data } = await createArtwork({
+      console.log("Prepared artwork input:", artworkInput);
+
+      // Create artwork first
+      const { data, errors: mutationErrors } = await createArtwork({
         variables: { input: artworkInput },
+        errorPolicy: "all",
       });
 
-      const artworkId = data.createArtwork.id;
+      console.log("Mutation response:", { data, errors: mutationErrors });
 
-      // Upload images
+      if (mutationErrors && mutationErrors.length > 0) {
+        console.error("GraphQL errors:", mutationErrors);
+        setErrors({ general: mutationErrors[0].message });
+        return;
+      }
+
+      if (!data || !data.createArtwork) {
+        console.error("No data returned from mutation");
+        setErrors({ general: "Failed to create artwork - no data returned" });
+        return;
+      }
+
+      const artworkId = data.createArtwork.id;
+      console.log("✅ Artwork created with ID:", artworkId);
+
+      // Now handle image uploads
       if (selectedFiles.length > 0) {
+        console.log(`📸 Uploading ${selectedFiles.length} images...`);
+
+        let uploadedCount = 0;
+        let failedUploads = [];
+
         for (let i = 0; i < selectedFiles.length; i++) {
           const selectedFile = selectedFiles[i];
-          const formDataImg = new FormData();
-          formDataImg.append("image", selectedFile.file);
-
-          const token = Cookies.get("auth-token");
-
-          const uploadResponse = await fetch(
-            `${
-              process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000"
-            }/upload`,
-            {
-              method: "POST",
-              headers: {
-                Authorization: `Bearer ${token}`,
-              },
-              body: formDataImg,
-            }
+          console.log(
+            `📤 Uploading file ${i + 1}/${selectedFiles.length}: ${
+              selectedFile.file.name
+            }`
           );
 
-          const uploadResult = await uploadResponse.json();
+          try {
+            // Prepare form data
+            const formDataImg = new FormData();
+            formDataImg.append("image", selectedFile.file);
 
-          if (uploadResponse.ok) {
-            await addImage({
+            const token = Cookies.get("auth-token");
+            console.log("Using auth token:", token ? "present" : "missing");
+
+            // Upload file
+            const uploadResponse = await fetch(
+              `${
+                process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000"
+              }/upload`,
+              {
+                method: "POST",
+                headers: {
+                  Authorization: `Bearer ${token}`,
+                },
+                body: formDataImg,
+              }
+            );
+
+            console.log("Upload response status:", uploadResponse.status);
+
+            if (!uploadResponse.ok) {
+              const errorText = await uploadResponse.text();
+              console.error("Upload failed:", errorText);
+              throw new Error(`HTTP ${uploadResponse.status}: ${errorText}`);
+            }
+
+            const uploadResult = await uploadResponse.json();
+            console.log("Upload result:", uploadResult);
+
+            // Add image to artwork
+            console.log("🖼️ Adding image to artwork via GraphQL...");
+            const imageResult = await addImage({
               variables: {
                 artwork_id: artworkId,
                 image_path: uploadResult.path,
                 image_name: uploadResult.originalName,
-                is_primary: i === 0,
+                is_primary: i === 0, // First image is primary
+                file_type: uploadResult.isPDF ? "pdf" : "image",
+                mime_type: uploadResult.fileType,
+                thumbnail_path: uploadResult.thumbnailPath,
               },
             });
-          } else {
-            throw new Error(
-              `Failed to upload ${selectedFile.file.name}: ${uploadResult.error}`
+
+            console.log("✅ Image added successfully:", imageResult);
+            uploadedCount++;
+          } catch (imageError) {
+            console.error(
+              `❌ Failed to upload ${selectedFile.file.name}:`,
+              imageError
             );
+            failedUploads.push({
+              filename: selectedFile.file.name,
+              error: imageError.message,
+            });
           }
+        }
+
+        console.log(
+          `📊 Upload summary: ${uploadedCount}/${selectedFiles.length} successful`
+        );
+
+        if (failedUploads.length > 0) {
+          console.error("Failed uploads:", failedUploads);
+          alert(
+            `Artwork created successfully, but ${
+              failedUploads.length
+            } image(s) failed to upload:\n${failedUploads
+              .map((f) => f.filename)
+              .join("\n")}`
+          );
+        } else {
+          console.log("✅ All images uploaded successfully");
         }
       }
 
+      console.log("🎉 Artwork creation process completed");
       onArtworkAdded();
     } catch (error) {
-      console.error("Error creating artwork:", error);
-      alert("Error creating artwork. Please try again.");
+      console.error("💥 Error in artwork creation process:", error);
+
+      // More detailed error handling
+      if (error instanceof Error) {
+        setErrors({ general: `Error: ${error.message}` });
+      } else {
+        setErrors({
+          general: "An unexpected error occurred while creating the artwork",
+        });
+      }
     } finally {
       setLoading(false);
     }
@@ -228,8 +398,12 @@ export default function AddArtworkModal({
     const { name, value } = e.target;
     setFormData((prev) => ({ ...prev, [name]: value }));
 
+    // Clear error when user starts typing
     if (errors[name]) {
-      setErrors((prev) => ({ ...prev, [name]: "" }));
+      setErrors((prev) => {
+        const { [name]: removed, ...rest } = prev;
+        return rest;
+      });
     }
   };
 
@@ -240,7 +414,10 @@ export default function AddArtworkModal({
     setShowArtistDropdown(true);
 
     if (errors.artist_name) {
-      setErrors((prev) => ({ ...prev, artist_name: "" }));
+      setErrors((prev) => {
+        const { artist_name, ...rest } = prev;
+        return rest;
+      });
     }
   };
 
@@ -255,6 +432,14 @@ export default function AddArtworkModal({
     value: string
   ) => {
     setDimensions((prev) => ({ ...prev, [field]: value }));
+
+    // Clear dimension error when user starts entering dimensions
+    if (errors.dimensions) {
+      setErrors((prev) => {
+        const { dimensions, ...rest } = prev;
+        return rest;
+      });
+    }
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -271,8 +456,9 @@ export default function AddArtworkModal({
         let preview = "";
 
         if (isPDF) {
-          // Use a PDF icon/placeholder for PDFs
-          preview = "/pdf-icon.svg"; // You'll need to add this icon to your public folder
+          // Use a PDF placeholder
+          preview =
+            "data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjQiIGhlaWdodD0iMjQiIHZpZXdCb3g9IjAgMCAyNCAyNCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPHBhdGggZD0iTTYgMkg5TDE0IDdWMjBIMTZWMkg2WiIgZmlsbD0iI0VGNDQ0NCIvPgo8L3N2Zz4=";
         } else {
           // Create object URL for images
           preview = URL.createObjectURL(file);
@@ -282,7 +468,7 @@ export default function AddArtworkModal({
           file,
           id,
           preview,
-          isPDF, // Add this property to track file type
+          isPDF,
         });
       }
 
@@ -296,14 +482,73 @@ export default function AddArtworkModal({
   const removeFile = (id: string) => {
     setSelectedFiles((prev) => {
       const fileToRemove = prev.find((f) => f.id === id);
-      if (fileToRemove && !fileToRemove.isPDF) {
+      if (
+        fileToRemove &&
+        !fileToRemove.isPDF &&
+        fileToRemove.preview.startsWith("blob:")
+      ) {
         URL.revokeObjectURL(fileToRemove.preview);
       }
       return prev.filter((f) => f.id !== id);
     });
   };
 
-  const conditionOptions = ["Excellent", "Very Good", "Good", "Fair", "Poor"];
+  // Close dropdown when clicking outside
+  const handleClickOutside = useCallback((e: MouseEvent) => {
+    const target = e.target as HTMLElement;
+    if (!target.closest(".artist-dropdown-container")) {
+      setShowArtistDropdown(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (showArtistDropdown) {
+      document.addEventListener("click", handleClickOutside);
+      return () => document.removeEventListener("click", handleClickOutside);
+    }
+  }, [showArtistDropdown, handleClickOutside]);
+
+  const conditionOptions = [
+    "Excellent",
+    "Very Good",
+    "Good",
+    "Fair",
+    "Poor",
+    "Needs Restoration",
+  ];
+
+  if (categoriesLoading) {
+    return (
+      <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
+        <div className="relative top-20 mx-auto p-5 border w-full max-w-5xl shadow-lg rounded-md bg-white mb-10">
+          <div className="flex justify-center items-center h-32">
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600"></div>
+            <span className="ml-2">Loading categories...</span>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (categoriesError) {
+    return (
+      <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
+        <div className="relative top-20 mx-auto p-5 border w-full max-w-5xl shadow-lg rounded-md bg-white mb-10">
+          <div className="flex justify-center items-center h-32">
+            <div className="text-center">
+              <p className="text-red-600 mb-4">Error loading categories</p>
+              <button
+                onClick={onClose}
+                className="px-4 py-2 bg-gray-500 text-white rounded"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
@@ -319,6 +564,21 @@ export default function AddArtworkModal({
             <XMarkIcon className="h-6 w-6" />
           </button>
         </div>
+
+        {/* General Error Display */}
+        {errors.general && (
+          <div className="mb-4 p-3 bg-red-50 border border-red-200 rounded-md">
+            <p className="text-red-700 text-sm">{errors.general}</p>
+            <details className="mt-2">
+              <summary className="text-xs text-red-600 cursor-pointer">
+                Debug Info
+              </summary>
+              <pre className="text-xs text-red-600 mt-1 whitespace-pre-wrap">
+                {JSON.stringify(errors, null, 2)}
+              </pre>
+            </details>
+          </div>
+        )}
 
         <form onSubmit={handleSubmit} className="space-y-6">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -350,7 +610,7 @@ export default function AddArtworkModal({
               </div>
 
               {/* Artist Name with Dropdown */}
-              <div className="relative">
+              <div className="relative artist-dropdown-container">
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Artist Name <span className="text-red-500">*</span>
                 </label>
@@ -451,6 +711,7 @@ export default function AddArtworkModal({
                   <input
                     type="number"
                     step="0.1"
+                    min="0"
                     placeholder="Width (cm)"
                     value={dimensions.width}
                     onChange={(e) =>
@@ -461,6 +722,7 @@ export default function AddArtworkModal({
                   <input
                     type="number"
                     step="0.1"
+                    min="0"
                     placeholder="Height (cm)"
                     value={dimensions.height}
                     onChange={(e) =>
@@ -472,6 +734,7 @@ export default function AddArtworkModal({
                     <input
                       type="number"
                       step="0.1"
+                      min="0"
                       placeholder="Length (cm)"
                       value={dimensions.length}
                       onChange={(e) =>
@@ -549,9 +812,16 @@ export default function AddArtworkModal({
                   max={new Date().getFullYear()}
                   value={formData.year_created}
                   onChange={handleInputChange}
-                  className="w-full border border-gray-300 rounded-md px-3 py-2 text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  className={`w-full border rounded-md px-3 py-2 text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 ${
+                    errors.year_created ? "border-red-500" : "border-gray-300"
+                  }`}
                   placeholder="e.g., 2023"
                 />
+                {errors.year_created && (
+                  <p className="text-red-500 text-xs mt-1">
+                    {errors.year_created}
+                  </p>
+                )}
               </div>
 
               <div>
@@ -614,9 +884,18 @@ export default function AddArtworkModal({
                   name="acquisition_price"
                   value={formData.acquisition_price}
                   onChange={handleInputChange}
-                  className="w-full border border-gray-300 rounded-md px-3 py-2 text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  className={`w-full border rounded-md px-3 py-2 text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 ${
+                    errors.acquisition_price
+                      ? "border-red-500"
+                      : "border-gray-300"
+                  }`}
                   placeholder="0.00"
                 />
+                {errors.acquisition_price && (
+                  <p className="text-red-500 text-xs mt-1">
+                    {errors.acquisition_price}
+                  </p>
+                )}
               </div>
 
               <div>
@@ -630,9 +909,16 @@ export default function AddArtworkModal({
                   name="current_value"
                   value={formData.current_value}
                   onChange={handleInputChange}
-                  className="w-full border border-gray-300 rounded-md px-3 py-2 text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  className={`w-full border rounded-md px-3 py-2 text-gray-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 ${
+                    errors.current_value ? "border-red-500" : "border-gray-300"
+                  }`}
                   placeholder="0.00"
                 />
+                {errors.current_value && (
+                  <p className="text-red-500 text-xs mt-1">
+                    {errors.current_value}
+                  </p>
+                )}
               </div>
             </div>
           </div>
