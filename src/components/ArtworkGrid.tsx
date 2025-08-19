@@ -1,7 +1,7 @@
 "use client";
 import { useState } from "react";
-import Image from "next/image";
 import ArtworkDetailModal from "./ArtworkDetailModal";
+import { PhotoIcon, DocumentIcon } from "@heroicons/react/24/outline";
 
 interface Artwork {
   id: string;
@@ -42,6 +42,7 @@ export default function ArtworkGrid({
   onArtworkUpdated,
 }: ArtworkGridProps) {
   const [selectedArtwork, setSelectedArtwork] = useState<string | null>(null);
+  const [imageErrors, setImageErrors] = useState<Set<string>>(new Set());
 
   const formatPrice = (price?: number) => {
     if (!price) return "";
@@ -52,11 +53,67 @@ export default function ArtworkGrid({
   };
 
   const getImageUrl = (imagePath?: string) => {
-    if (!imagePath) return "/placeholder-artwork.jpg";
+    if (!imagePath) return null;
     return `${
       process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000"
     }${imagePath}`;
   };
+
+  const handleImageError = (artworkId: string) => {
+    console.log(`Image error for artwork ${artworkId}`);
+    setImageErrors((prev) => new Set([...prev, artworkId]));
+  };
+
+  const renderArtworkImage = (artwork: Artwork) => {
+    const imageUrl = getImageUrl(artwork.primary_image?.image_path);
+    const hasImageError = imageErrors.has(artwork.id);
+
+    console.log(`Rendering image for artwork ${artwork.id}:`, {
+      hasImage: !!artwork.primary_image,
+      imagePath: artwork.primary_image?.image_path,
+      imageUrl,
+      hasError: hasImageError,
+    });
+
+    // No image available or image failed to load
+    if (!imageUrl || hasImageError || !artwork.primary_image) {
+      return (
+        <div className="w-full h-full flex flex-col items-center justify-center bg-gray-100">
+          <PhotoIcon className="h-16 w-16 text-gray-400 mb-2" />
+          <span className="text-sm text-gray-500 font-medium">No Image</span>
+        </div>
+      );
+    }
+
+    // PDF file
+    if (isPDF(artwork.primary_image.image_path)) {
+      return (
+        <div className="w-full h-full flex flex-col items-center justify-center bg-red-50">
+          <DocumentIcon className="w-16 h-16 text-red-600 mb-2" />
+          <span className="text-sm text-red-600 font-medium">PDF Document</span>
+        </div>
+      );
+    }
+
+    // Regular image using standard img tag (not Next.js Image)
+    return (
+      <img
+        src={imageUrl}
+        alt={artwork.title}
+        className="w-full h-full object-cover"
+        onError={() => handleImageError(artwork.id)}
+        onLoad={() =>
+          console.log(`Image loaded successfully for artwork ${artwork.id}`)
+        }
+      />
+    );
+  };
+
+  console.log("ArtworkGrid rendering:", {
+    artworkCount: artworks.length,
+    totalCount,
+    firstArtwork: artworks[0],
+  });
 
   return (
     <>
@@ -83,34 +140,7 @@ export default function ArtworkGrid({
             >
               {/* Image */}
               <div className="aspect-square relative bg-gray-200">
-                {isPDF(artwork.primary_image?.image_path) ? (
-                  // PDF Display
-                  <div className="w-full h-full flex flex-col items-center justify-center bg-red-50">
-                    <svg
-                      className="w-16 h-16 text-red-600 mb-2"
-                      fill="currentColor"
-                      viewBox="0 0 20 20"
-                    >
-                      <path
-                        fillRule="evenodd"
-                        d="M4 4a2 2 0 012-2h4.586A2 2 0 0112 2.586L15.414 6A2 2 0 0116 7.414V16a2 2 0 01-2 2H6a2 2 0 01-2-2V4zm2 6a1 1 0 011-1h6a1 1 0 110 2H7a1 1 0 01-1-1zm1 3a1 1 0 100 2h6a1 1 0 100-2H7z"
-                        clipRule="evenodd"
-                      />
-                    </svg>
-                    <span className="text-sm text-red-600 font-medium">
-                      PDF Document
-                    </span>
-                  </div>
-                ) : (
-                  // Image Display
-                  <Image
-                    src={getImageUrl(artwork.primary_image?.image_path)}
-                    alt={artwork.title}
-                    fill
-                    className="object-cover"
-                    sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 25vw"
-                  />
-                )}
+                {renderArtworkImage(artwork)}
               </div>
 
               {/* Content */}

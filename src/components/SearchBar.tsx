@@ -1,6 +1,6 @@
 // src/components/SearchBar.tsx
 "use client";
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { MagnifyingGlassIcon, XMarkIcon } from "@heroicons/react/24/outline";
 
 interface SearchBarProps {
@@ -9,6 +9,18 @@ interface SearchBarProps {
 
 export function SearchBar({ onSearch }: SearchBarProps) {
   const [query, setQuery] = useState("");
+
+  // Debounced search - triggers search 500ms after user stops typing
+  const debouncedSearch = useCallback(
+    debounce((searchQuery: string) => {
+      onSearch(searchQuery.trim());
+    }, 500),
+    [onSearch]
+  );
+
+  useEffect(() => {
+    debouncedSearch(query);
+  }, [query, debouncedSearch]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -23,9 +35,6 @@ export function SearchBar({ onSearch }: SearchBarProps) {
   const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.value;
     setQuery(value);
-
-    // Optional: Real-time search as user types (with debouncing)
-    // You can implement debouncing here if needed
   };
 
   return (
@@ -62,4 +71,16 @@ export function SearchBar({ onSearch }: SearchBarProps) {
       )}
     </div>
   );
+}
+
+// Debounce utility function
+function debounce<T extends (...args: any[]) => any>(
+  func: T,
+  wait: number
+): (...args: Parameters<T>) => void {
+  let timeout: NodeJS.Timeout;
+  return (...args: Parameters<T>) => {
+    clearTimeout(timeout);
+    timeout = setTimeout(() => func(...args), wait);
+  };
 }

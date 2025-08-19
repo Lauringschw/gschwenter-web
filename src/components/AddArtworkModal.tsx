@@ -135,7 +135,6 @@ export default function AddArtworkModal({
   }, [artistSearch, existingArtists]);
 
   useEffect(() => {
-    // Update dimensions string when individual dimensions change
     let dimensionString = "";
     if (dimensionType === "2d") {
       if (dimensions.width && dimensions.height) {
@@ -146,8 +145,14 @@ export default function AddArtworkModal({
         dimensionString = `${dimensions.width}×${dimensions.height}×${dimensions.length} cm`;
       }
     }
-    setFormData((prev) => ({ ...prev, dimensions: dimensionString }));
-  }, [dimensions, dimensionType]);
+
+    setFormData((prev) => {
+      if (prev.dimensions !== dimensionString) {
+        return { ...prev, dimensions: dimensionString };
+      }
+      return prev;
+    });
+  }, [dimensions.width, dimensions.height, dimensions.length, dimensionType]);
 
   // Cleanup object URLs on unmount
   useEffect(() => {
